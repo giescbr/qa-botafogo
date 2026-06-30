@@ -442,7 +442,7 @@
 <script>
 const USERS = {
   'lideres': { pass: 'qwe123!@',     role: 'viewer' },
-  'all':     { pass: 'BOT.qa12345',  role: 'viewer' },
+  'all':     { pass: '123456',       role: 'viewer' },
   'QA':      { pass: 'QA.Bot2026',   role: 'admin'  }
 };
  
@@ -480,25 +480,6 @@ window.addEventListener('DOMContentLoaded', function checkExistingSession() {
     <div id="lastUpdateBadge">🕒 Última atualização: —</div>
   </div>
   <div id="periodBadge">📅 —</div>
-</div>
- 
-<div class="modal-overlay" id="modalOverlay">
-  <div class="modal">
-    <div class="lock-icon">🔑</div>
-    <h3>Publicar Atualização</h3>
-    <p>Cole o token de acesso do GitHub para publicar os novos dados no repositório.</p>
-    <div id="lockdownMsg">⏳ Muitas tentativas. Aguarde <strong id="cdCount">60</strong>s para tentar novamente.</div>
-    <div class="pw-wrap">
-      <input type="password" id="pwInput" placeholder="ghp_xxxxxxxxxxxxxxxx" autocomplete="off">
-      <span class="pw-toggle" id="pwToggle" title="Mostrar/ocultar">👁️</span>
-    </div>
-    <div id="modalError"></div>
-    <div class="attempts-left" id="attemptsLeft"></div>
-    <div class="modal-actions">
-      <button class="btn-outline" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="checkPassword()">🚀 Publicar</button>
-    </div>
-  </div>
 </div>
  
 <div id="toast"></div>
@@ -592,7 +573,7 @@ window.addEventListener('DOMContentLoaded', function checkExistingSession() {
     <details class="upload-card-discrete">
       <summary>🔒 Atualizar dados (acesso restrito)</summary>
       <div class="upload-card-discrete-body">
-        <div style="font-size:.76rem;color:var(--text-light);margin-bottom:10px;">⚠️ Ao confirmar, este arquivo substitui os dados públicos vistos por todos que acessam este link.</div>
+        <div style="font-size:.76rem;color:var(--text-light);margin-bottom:10px;">⚠️ Ao enviar, um arquivo <strong>data.json</strong> será baixado automaticamente — suba-o no GitHub (Add file → Upload files) para publicar a atualização para todos.</div>
         <div class="drop-zone drop-zone-sm" id="dropZone" onclick="document.getElementById('fileInput').click()">
           <div class="dz-icon" style="font-size:1.6rem;margin-bottom:4px;">📂</div>
           <p style="margin-bottom:8px;">Arraste a planilha aqui ou clique para selecionar</p>
@@ -612,12 +593,8 @@ window.addEventListener('DOMContentLoaded', function checkExistingSession() {
  
 <script>
 let pendingFile = null;
-let attempts    = 0;
-const MAX_ATTEMPTS = 5;
-const CORRECT_PW   = '@QA.Bot2026';
-let lockdownTimer  = null;
-let chartSector    = null;
-let chartPeriod    = null;
+let chartSector  = null;
+let chartPeriod  = null;
  
 const dropZone  = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
@@ -638,59 +615,7 @@ function handleFileSelected(file) {
   pendingFile = file;
   document.getElementById('fileName').textContent = file.name;
   document.getElementById('fileBadge').classList.add('show');
-  openModal();
-}
- 
-function openModal() {
-  document.getElementById('pwInput').value = '';
-  document.getElementById('modalError').textContent = '';
-  document.getElementById('attemptsLeft').textContent = '';
-  document.getElementById('modalOverlay').classList.add('show');
-  setTimeout(() => document.getElementById('pwInput').focus(), 300);
-}
-function closeModal() {
-  document.getElementById('modalOverlay').classList.remove('show');
-}
- 
-document.getElementById('pwToggle').addEventListener('click', () => {
-  const inp = document.getElementById('pwInput');
-  inp.type  = inp.type === 'password' ? 'text' : 'password';
-});
-document.getElementById('pwInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') checkPassword();
-});
- 
-function checkPassword() {
-  if (lockdownTimer) return;
-  const token = document.getElementById('pwInput').value.trim();
-  if (!token) {
-    document.getElementById('modalError').textContent = '❌ Cole um token válido.';
-    return;
-  }
-  attempts = 0;
-  closeModal();
-  processFile(pendingFile, token);
-}
- 
-function startLockdown() {
-  let secs = 60;
-  document.getElementById('lockdownMsg').style.display = 'block';
-  document.getElementById('pwInput').disabled = true;
-  document.getElementById('modalError').textContent    = '';
-  document.getElementById('attemptsLeft').textContent  = '';
-  document.getElementById('cdCount').textContent = secs;
-  lockdownTimer = setInterval(() => {
-    secs--;
-    document.getElementById('cdCount').textContent = secs;
-    if (secs <= 0) {
-      clearInterval(lockdownTimer);
-      lockdownTimer = null;
-      attempts = 0;
-      document.getElementById('lockdownMsg').style.display = 'none';
-      document.getElementById('pwInput').disabled = false;
-      document.getElementById('pwInput').focus();
-    }
-  }, 1000);
+  processFile(file);
 }
  
 function showToast(msg, type = 'info', duration = 3000) {
@@ -703,7 +628,7 @@ function showToast(msg, type = 'info', duration = 3000) {
   t._timer = setTimeout(() => { t.style.display = 'none'; }, duration);
 }
  
-function processFile(file, token) {
+function processFile(file) {
   showToast('⏳ Processando arquivo…', 'info', 6000);
   const reader = new FileReader();
   reader.onload = async e => {
@@ -712,7 +637,7 @@ function processFile(file, token) {
       const wb     = XLSX.read(data, { type: 'array' });
       const parsed = parseWorkbook(wb, file.name);
       renderDashboard(parsed);
-      await publishToGitHub(parsed, token);
+      downloadDataFile(parsed);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch(err) {
       console.error(err);
@@ -725,14 +650,12 @@ function processFile(file, token) {
  
 // ══════════════════════════════════════════════════════════════
 //  Persistência via GitHub: os dados ficam salvos em data.json no
-//  próprio repositório. Qualquer pessoa com o link vê o conteúdo
-//  desse arquivo; só o usuário QA, usando um token do GitHub,
-//  consegue sobrescrevê-lo (publicar uma nova planilha).
+//  próprio repositório. Como o site é estático, a publicação
+//  funciona em 2 passos: o QA importa a planilha aqui, o site gera
+//  um arquivo data.json pronto para baixar, e o QA sobe esse
+//  arquivo no GitHub (Add file → Upload files) para que todos vejam.
 // ══════════════════════════════════════════════════════════════
-const GH_OWNER = 'giescbr';
-const GH_REPO  = 'qa-botafogo';
-const GH_PATH  = 'data.json';
-const GH_API   = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_PATH}`;
+const GH_PATH = 'data.json';
  
 function setLastUpdateBadge(isoString) {
   const el = document.getElementById('lastUpdateBadge');
@@ -742,38 +665,21 @@ function setLastUpdateBadge(isoString) {
   el.style.display = 'block';
 }
  
-async function publishToGitHub(parsed, token) {
-  try {
-    const savedAt = new Date().toISOString();
-    const payload = { data: parsed, savedAt };
-    const contentB64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload, null, 2))));
+function downloadDataFile(parsed) {
+  const savedAt = new Date().toISOString();
+  const payload = { data: parsed, savedAt };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = 'data.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
  
-    // Precisa do sha atual do arquivo para sobrescrever
-    let sha = null;
-    const getRes = await fetch(GH_API, { headers: { Authorization: `token ${token}` } });
-    if (getRes.ok) { const j = await getRes.json(); sha = j.sha; }
- 
-    const putRes = await fetch(GH_API, {
-      method: 'PUT',
-      headers: { Authorization: `token ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: `Atualização de dados — ${new Date().toLocaleString('pt-BR')}`,
-        content: contentB64,
-        sha: sha || undefined
-      })
-    });
- 
-    if (!putRes.ok) {
-      const errBody = await putRes.json().catch(() => ({}));
-      throw new Error(errBody.message || `Falha ao publicar (HTTP ${putRes.status})`);
-    }
- 
-    setLastUpdateBadge(savedAt);
-    showToast('✅ Dashboard atualizado e publicado no GitHub!', 'success');
-  } catch (err) {
-    console.error('Erro ao publicar no GitHub:', err);
-    showToast('❌ Não foi possível publicar: ' + err.message, 'error', 6000);
-  }
+  setLastUpdateBadge(savedAt);
+  showToast('✅ Arquivo data.json baixado! Suba-o no GitHub (Add file → Upload files) para publicar para todos.', 'success', 7000);
 }
  
 async function loadSharedData() {
@@ -1328,4 +1234,3 @@ function renderEvalSectorContent(setor) {
 </script>
 </body>
 </html>
- 
